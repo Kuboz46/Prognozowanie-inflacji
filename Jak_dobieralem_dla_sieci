@@ -1,0 +1,408 @@
+library(neuralnet)
+
+library(xts)
+
+# In sample - do 2020 roku (wlacznie)
+# Out of sample - styczeń 2021 - koniec
+
+
+
+
+
+
+
+
+rm(list = ls())
+
+library(openxlsx)
+library(forecast)
+library(caret)
+library(dplyr)
+
+# install.packages("bayesforecast")
+
+library(bayesforecast)
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686)
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:104, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2)]
+
+duze_kategorie <- duze_kategorie[2:110, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-05-01")
+
+
+
+
+
+
+
+
+
+
+ktora_duza_kategoria <- function(nr_malej_kategorii)
+{
+  if(nr_malej_kategorii >= 1 & nr_malej_kategorii <= 86)
+  {
+    nr_duzej_kategorii <- 1
+  }
+  if(nr_malej_kategorii >= 87 & nr_malej_kategorii <= 96)
+  {
+    nr_duzej_kategorii <- 2
+  }
+  if(nr_malej_kategorii >= 97 & nr_malej_kategorii <= 99)
+  {
+    nr_duzej_kategorii <- 3
+  }
+  if(nr_malej_kategorii >= 100 & nr_malej_kategorii <= 113)
+  {
+    nr_duzej_kategorii <- 4
+  }
+  if(nr_malej_kategorii >= 114 & nr_malej_kategorii <= 117)
+  {
+    nr_duzej_kategorii <- 5
+  }
+  if(nr_malej_kategorii >= 118 & nr_malej_kategorii <= 133)
+  {
+    nr_duzej_kategorii <- 6
+  }
+  if(nr_malej_kategorii >= 134 & nr_malej_kategorii <= 142)
+  {
+    nr_duzej_kategorii <- 7
+  }
+  if(nr_malej_kategorii >= 143 & nr_malej_kategorii <= 182)
+  {
+    nr_duzej_kategorii <- 8
+  }
+  if(nr_malej_kategorii >= 183 & nr_malej_kategorii <= 197)
+  {
+    nr_duzej_kategorii <- 9
+  }
+# Tego nie biore, bo one zawieraja sie w 12-tej duzej kategorii (transport (paliwa, reszta)).
+#   if(nr_malej_kategorii >= 206 & nr_malej_kategorii <= 209) 
+#   {
+#     nr_duzej_kategorii <- 10
+#   }
+#   if((nr_malej_kategorii >= 198 & nr_malej_kategorii <= 205) | (nr_malej_kategorii >= 210 & nr_malej_kategorii <= 225))
+#   {
+#     nr_duzej_kategorii <- 11
+#   }
+  if(nr_malej_kategorii >= 198 & nr_malej_kategorii <= 225)
+  {
+    nr_duzej_kategorii <- 12
+  }
+  if(nr_malej_kategorii >= 226 & nr_malej_kategorii <= 236)
+  {
+    nr_duzej_kategorii <- 13
+  }
+  if(nr_malej_kategorii >= 237 & nr_malej_kategorii <= 289)
+  {
+    nr_duzej_kategorii <- 14
+  }
+  if(nr_malej_kategorii >= 290 & nr_malej_kategorii <= 301)
+  {
+    nr_duzej_kategorii <- 15
+  }
+  if(nr_malej_kategorii >= 302 & nr_malej_kategorii <= 308)
+  {
+    nr_duzej_kategorii <- 16
+  }
+  if(nr_malej_kategorii >= 309 & nr_malej_kategorii <= 340)
+  {
+    nr_duzej_kategorii <- 17
+  }
+  
+  return(nr_duzej_kategorii)
+}
+
+
+
+
+
+
+
+
+
+
+
+nazwy_zmiennych_prognozowanych <- names(xts_dane)
+
+
+
+nazwy_duzych_kategorii <- names(xts_dane)[1:17]
+nazwy_malych_kategorii <- names(xts_dane)[18:ncol(xts_dane)]
+
+
+
+nr_y_duzych_kategorii <- rep(0, ncol(xts_dane) - 17)
+
+for(j in 18:ncol(xts_dane))
+{
+  nr_y_duzych_kategorii[j - 17] <- ktora_duza_kategoria(j - 17)
+}
+
+
+najlepsze_wyniki_RMSE <- list()
+
+zbiory_zmiennych <- list()
+
+optymalne_ilosci_jednostek_w_warstwie_ukrytej <- list()
+
+for(nr_zmiennej_y in setdiff(1:17, 10:11))
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  idx_ta_kategoria <- which(nr_y_duzych_kategorii == nr_zmiennej_y) + 17
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:101, nr_zmiennej_y]
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:101, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:100, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:101, ]
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- merge.xts(xts_objasniana, xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem)
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  sr_1_zmiennej_y <- mean(xts_objasniana[1:71, 1])
+  od_stand_1_zmiennej_y <- sd(xts_objasniana[1:71, 1])
+  
+  
+  sc_xts_1_zmienna_y <- scale(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem)
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2020-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2021-01-01", end = "2023-05-01")
+  
+  
+  
+  
+  
+  
+  
+  wart_RMSE_dobor_zmiennych <- rep(NA, 3)
+  
+  zbior_zmiennych <- c()
+  
+  for(i in 1:3)
+  {
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    print(paste0(i, " zmiennych"))
+    
+    wart_RMSE <- rep(NA, length(idx_ta_kategoria) + 1)
+    
+    k <- 1
+    
+    for(j in c(nr_zmiennej_y, idx_ta_kategoria))
+    {
+      print(k)
+      
+      if(j %in% zbior_zmiennych)
+      {
+        print("To już było.")
+        
+        wart_RMSE[k] <- 1e+09
+        
+        k <- k + 1
+        
+        next;
+      }
+      
+      wart_RMSE[k] <- 1e+09
+      
+      try({
+        # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+        
+        neur_net_1 <- neuralnet(Duża.kategoria ~ ., hidden = 1, startweights = 0, data = xts_1_zmienna_y_2015_2022[, c(1, append(zbior_zmiennych + 1, j + 1))], stepmax = 1e+07, act.fct="tanh", algorithm = "backprop", learningrate = 0.001)
+        
+        pred_1 <- predict(neur_net_1, xts_1_zmienna_y_2022_2023[, append(zbior_zmiennych, j + 1)])
+        
+        unsc_pred_1 <- pred_1 * od_stand_1_zmiennej_y + sr_1_zmiennej_y
+        
+        dane_pred <- data.frame(Dane = as.double(xts_objasniana[72:100, 1]), Predykcje = unsc_pred_1)
+        
+        xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+        
+        wart_RMSE[k] <- RMSE(xts_dane_pred[, 1], xts_dane_pred[, 2])
+        
+        print(wart_RMSE[k])
+        
+      }, silent = TRUE)
+      
+      k <- k + 1
+    }
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    print("Najlepsza zmienna")
+    
+    min_RMSE <- which.min(wart_RMSE)
+    
+    print(c(nr_zmiennej_y, idx_ta_kategoria)[min_RMSE])
+    
+    print(names(xts_1_zmienna_y_2015_2022)[c(nr_zmiennej_y, idx_ta_kategoria)[min_RMSE]])
+    
+    print("RMSE")
+    
+    wart_RMSE_dobor_zmiennych[i] <- min(wart_RMSE)
+    
+    print(wart_RMSE_dobor_zmiennych[i])
+    
+    zbior_zmiennych <- append(zbior_zmiennych, c(nr_zmiennej_y, idx_ta_kategoria)[min_RMSE])
+  }
+  
+  zbiory_zmiennych[[nr_zmiennej_y]] <- zbior_zmiennych[1:which.min(wart_RMSE_dobor_zmiennych)]
+  
+  najlepsze_wyniki_RMSE[[nr_zmiennej_y]] <- min(wart_RMSE_dobor_zmiennych)
+}
+
+
+
+
+
+
+
+
+# save.image("Modele_dla_duzych_kategorii_sieci.RData")
+
+# Czas realizacji algorytmu: 3 godziny
+
+
+
+
+
