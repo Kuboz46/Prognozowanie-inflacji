@@ -1,0 +1,3808 @@
+library(neuralnet)
+
+library(xts)
+
+# In sample - do 2020 roku (wlacznie)
+# Out of sample - styczeń 2021 - koniec
+
+
+
+
+
+
+
+# !!!
+# Zrobic na wszystkich kategoriach auto.arimy lub auto.sarimy do konca 2021 roku i zrobic prognozy na 2022 roku!!!
+# Potem bede sprawdzal, gdzie bledy sa najwieksze.
+# Plik: "2. cpi zadanie - gretl.xlsx", 2 arkusz
+
+rm(list = ls())
+
+library(openxlsx)
+library(forecast)
+library(caret)
+library(dplyr)
+
+# install.packages("bayesforecast")
+
+library(bayesforecast)
+
+
+
+
+load("Modele_dla_duzych_kategorii_ARIMA_2019.RData")
+
+
+
+
+
+
+
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+nazwy_zmiennych_prognozowanych <- names(xts_dane)
+
+
+
+nazwy_duzych_kategorii <- names(xts_dane)[1:17]
+nazwy_malych_kategorii <- names(xts_dane)[18:ncol(xts_dane)]
+
+
+
+
+
+
+
+
+
+ktora_duza_kategoria <- function(nr_malej_kategorii)
+{
+  if(nr_malej_kategorii >= 1 & nr_malej_kategorii <= 86)
+  {
+    nr_duzej_kategorii <- 1
+  }
+  if(nr_malej_kategorii >= 87 & nr_malej_kategorii <= 96)
+  {
+    nr_duzej_kategorii <- 2
+  }
+  if(nr_malej_kategorii >= 97 & nr_malej_kategorii <= 99)
+  {
+    nr_duzej_kategorii <- 3
+  }
+  if(nr_malej_kategorii >= 100 & nr_malej_kategorii <= 113)
+  {
+    nr_duzej_kategorii <- 4
+  }
+  if(nr_malej_kategorii >= 114 & nr_malej_kategorii <= 117)
+  {
+    nr_duzej_kategorii <- 5
+  }
+  if(nr_malej_kategorii >= 118 & nr_malej_kategorii <= 133)
+  {
+    nr_duzej_kategorii <- 6
+  }
+  if(nr_malej_kategorii >= 134 & nr_malej_kategorii <= 142)
+  {
+    nr_duzej_kategorii <- 7
+  }
+  if(nr_malej_kategorii >= 143 & nr_malej_kategorii <= 182)
+  {
+    nr_duzej_kategorii <- 8
+  }
+  if(nr_malej_kategorii >= 183 & nr_malej_kategorii <= 197)
+  {
+    nr_duzej_kategorii <- 9
+  }
+  if(nr_malej_kategorii >= 198 & nr_malej_kategorii <= 225)
+  {
+    nr_duzej_kategorii <- 12
+  }
+  if(nr_malej_kategorii >= 226 & nr_malej_kategorii <= 236)
+  {
+    nr_duzej_kategorii <- 13
+  }
+  if(nr_malej_kategorii >= 237 & nr_malej_kategorii <= 289)
+  {
+    nr_duzej_kategorii <- 14
+  }
+  if(nr_malej_kategorii >= 290 & nr_malej_kategorii <= 300)
+  {
+    nr_duzej_kategorii <- 15
+  }
+  if(nr_malej_kategorii >= 301 & nr_malej_kategorii <= 307)
+  {
+    nr_duzej_kategorii <- 16
+  }
+  if(nr_malej_kategorii >= 308 & nr_malej_kategorii <= 339)
+  {
+    nr_duzej_kategorii <- 17
+  }
+  
+  return(nr_duzej_kategorii)
+}
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA_2019 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_ARIMA_2019 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2018-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2018-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2019-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_ARIMA_2019[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2019[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_ARIMA_2019[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(sc_xts_objasniana, xreg = xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 56, xreg = xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_ARIMA_2019[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[48:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_ARIMA_2019[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2019[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA <- wyniki_RMSE_wszystko_ARIMA_2019
+listy_prognoz_wszystko_ARIMA <- listy_prognoz_wszystko_ARIMA_2019
+
+
+
+
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_ARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_ARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[49:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_ARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2019)/ARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, ", RMSE = ", wyniki_RMSE_wszystko_ARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2019[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_ARIMA_2019[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2019-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2019[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2019 <- excel_prognozy_realizacja
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_ARIMA_2019[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_ARIMA_2019.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_ARIMA_2020.RData")
+
+
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA_2020 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_ARIMA_2020 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2019-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2019-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2020-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_ARIMA_2020[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2020[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_ARIMA_2020[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(sc_xts_objasniana, xreg = xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 44, xreg = xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_ARIMA_2020[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[60:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_ARIMA_2020[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2020[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA <- wyniki_RMSE_wszystko_ARIMA_2020
+listy_prognoz_wszystko_ARIMA <- listy_prognoz_wszystko_ARIMA_2020
+
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_ARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_ARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[61:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_ARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2020)/ARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, ", RMSE = ", wyniki_RMSE_wszystko_ARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2020[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_ARIMA_2020[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2020-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2020[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+
+
+excel_prognozy_realizacja_2020 <- excel_prognozy_realizacja
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_ARIMA_2020[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_ARIMA_2020.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_ARIMA_2021.RData")
+
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA_2021 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_ARIMA_2021 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2020-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2020-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2021-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_ARIMA_2021[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2021[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_ARIMA_2021[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(sc_xts_objasniana, xreg = xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 32, xreg = xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_ARIMA_2021[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[72:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_ARIMA_2021[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2021[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA <- wyniki_RMSE_wszystko_ARIMA_2021
+listy_prognoz_wszystko_ARIMA <- listy_prognoz_wszystko_ARIMA_2021
+
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_ARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_ARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[73:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_ARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2021)/ARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, ", RMSE = ", wyniki_RMSE_wszystko_ARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2021[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_ARIMA_2021[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2021-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2021[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2021 <- excel_prognozy_realizacja
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_ARIMA_2021[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_ARIMA_2021.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_ARIMA_2022.RData")
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA_2022 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_ARIMA_2022 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2021-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2021-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2022-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_ARIMA_2022[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2022[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_ARIMA_2022[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(sc_xts_objasniana, xreg = xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 20, xreg = xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]])
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_ARIMA_2022[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[84:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_ARIMA_2022[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_ARIMA_2022[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_ARIMA <- wyniki_RMSE_wszystko_ARIMA_2022
+listy_prognoz_wszystko_ARIMA <- listy_prognoz_wszystko_ARIMA_2022
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_ARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_ARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[85:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_ARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2022)/ARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, ", RMSE = ", wyniki_RMSE_wszystko_ARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2022[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_ARIMA_2022[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2022-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_ARIMA_2022[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2022 <- excel_prognozy_realizacja
+
+write.xlsx(list("Do 2019" = excel_prognozy_realizacja_2019, "Do 2020" = excel_prognozy_realizacja_2020, "Do 2021" = excel_prognozy_realizacja_2021,
+                "Do 2022" = excel_prognozy_realizacja_2022), "Prognozy_vs_realizacje_ARIMA.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_ARIMA_2022[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_ARIMA_2022.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_SARIMA_2019.RData")
+
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA_2019 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_SARIMA_2019 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2018-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2018-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2019-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_SARIMA_2019[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2019[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_SARIMA_2019[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(ts(sc_xts_objasniana, frequency = 12), xreg = ts(xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 56, xreg = ts(xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_SARIMA_2019[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[48:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_SARIMA_2019[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2019[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA <- wyniki_RMSE_wszystko_SARIMA_2019
+listy_prognoz_wszystko_SARIMA <- listy_prognoz_wszystko_SARIMA_2019
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_SARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_SARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[49:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_SARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2019)/SARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, " (SARIMA), RMSE = ", wyniki_RMSE_wszystko_SARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2019[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_SARIMA_2019[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2019-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2019[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2019 <- excel_prognozy_realizacja
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_SARIMA_2019[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_SARIMA_2019.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_SARIMA_2020.RData")
+
+
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA_2020 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_SARIMA_2020 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2019-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2019-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2020-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_SARIMA_2020[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2020[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_SARIMA_2020[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(ts(sc_xts_objasniana, frequency = 12), xreg = ts(xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 44, xreg = ts(xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_SARIMA_2020[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[60:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_SARIMA_2020[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2020[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA <- wyniki_RMSE_wszystko_SARIMA_2020
+listy_prognoz_wszystko_SARIMA <- listy_prognoz_wszystko_SARIMA_2020
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_SARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_SARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[61:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_SARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2020)/SARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, " (SARIMA), RMSE = ", wyniki_RMSE_wszystko_SARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2020[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_SARIMA_2020[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2020-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2020[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2020 <- excel_prognozy_realizacja
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_SARIMA_2020[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_SARIMA_2020.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_SARIMA_2021.RData")
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA_2021 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_SARIMA_2021 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2020-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2020-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2021-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_SARIMA_2021[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2021[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_SARIMA_2021[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(ts(sc_xts_objasniana, frequency = 12), xreg = ts(xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 32, xreg = ts(xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_SARIMA_2021[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[72:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_SARIMA_2021[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2021[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA <- wyniki_RMSE_wszystko_SARIMA_2021
+listy_prognoz_wszystko_SARIMA <- listy_prognoz_wszystko_SARIMA_2021
+
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_SARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_SARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[73:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_SARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2021)/SARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, " (SARIMA), RMSE = ", wyniki_RMSE_wszystko_SARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2021[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_SARIMA_2021[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2021-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2021[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2021 <- excel_prognozy_realizacja
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_SARIMA_2021[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_SARIMA_2021.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+load("Modele_dla_duzych_kategorii_SARIMA_2022.RData")
+
+
+
+
+# Male kategorie inflacyjne
+
+male_kategorie <- read.xlsx("!CPI_grupy_elementarne.xlsx")
+
+kol_mal_kat <- c(5:237, 239:686) - 1
+
+nazwy_malych_kategorii <- as.character(male_kategorie[3, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]])
+
+male_kategorie <- male_kategorie[4:106, kol_mal_kat[seq(1, length(kol_mal_kat), by = 2)]]
+
+names(male_kategorie) <- nazwy_malych_kategorii
+
+for(j in 1:ncol(male_kategorie))
+{
+  male_kategorie[, j] <- as.double(male_kategorie[, j])
+}
+
+
+
+sum(is.na(male_kategorie))
+# 39
+
+for(j in 1:ncol(male_kategorie)) {if(sum(is.na(male_kategorie[, j])) > 0){print(j)}}
+# 121
+
+# Prawie polowa wierszy to są braki danych, wiec ta zmienna usune.
+
+male_kategorie <- male_kategorie[, -121]
+
+sum(is.na(male_kategorie))
+# 0
+
+
+
+
+daty <- rep(0, nrow(male_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(male_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+
+xts_male_kategorie <- xts(male_kategorie, order.by = daty)
+
+
+
+
+
+
+
+
+
+
+
+
+# Duze kategorie inflacyjne
+
+duze_kategorie <- read.xlsx("!CPI_prognoza.xlsx", sheet = 2)
+
+duze_kategorie <- duze_kategorie[, seq(7, 39, by = 2) - 1]
+
+duze_kategorie <- duze_kategorie[2:112, ]
+
+daty <- rep(0, nrow(duze_kategorie))
+
+rok <- 2015
+
+for(i in 1:nrow(duze_kategorie))
+{
+  miesiac <- (i - 1) %% 12 + 1
+  
+  if (miesiac <= 9)
+  {
+    daty[i] <- paste0(rok, "-0", miesiac, "-01")
+  }
+  else
+  {
+    daty[i] <- paste0(rok, "-", miesiac, "-01")
+  }
+  
+  if(i %% 12 == 0)
+  {
+    rok <- rok + 1
+  }
+}
+
+daty <- as.Date(daty)
+
+for(j in 1:ncol(duze_kategorie))
+{
+  duze_kategorie[, j] <- as.double(duze_kategorie[, j])
+}
+
+xts_duze_kategorie <- xts(duze_kategorie, order.by = daty)
+
+sum(is.na(xts_duze_kategorie))
+
+
+
+
+
+
+
+
+
+
+
+
+xts_dane <- merge.xts(xts_duze_kategorie, xts_male_kategorie)
+
+xts_dane <- window(xts_dane, end = "2023-08-01")
+
+
+# Dla 311 zmiennej (gimnazja), prawie polowe wartosci stanowia brak danych, zatem ta zmienna usune.
+xts_dane <- xts_dane[, -311]
+
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA_2022 <- rep(NA, 17)
+
+
+
+
+
+listy_prognoz_wszystko_SARIMA_2022 <- list()
+
+
+
+
+
+
+for(nr_zmiennej_y in 1:17)
+{
+  print(paste0(nr_zmiennej_y, "-ta zmienna y"))
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_dane
+  
+  # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+  
+  xts_objasniana <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, nr_zmiennej_y]
+  
+  xts_objasniana <- window(xts_objasniana, end = "2021-12-01")
+  
+  sc_xts_objasniana <- xts_objasniana
+  
+  names(xts_objasniana) <- "Duża kategoria"
+  
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ] <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1:103, ]
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[1, ] <- NA
+  xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[2:104, ]
+  
+  
+  # sc_pred = (pred - mean_pred) / sd_pred
+  
+  # sc_pred * sd_pred = pred - mean_pred
+  
+  # pred = sc_pred * sd_pred + mean_pred
+  
+  
+  
+  
+  sc_xts_1_zmienna_y <- xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem
+  
+  
+  xts_1_zmienna_y_2015_2022 <- window(sc_xts_1_zmienna_y, start = "2015-02-01", end = "2021-12-01")
+  xts_1_zmienna_y_2022_2023 <- window(sc_xts_1_zmienna_y, start = "2022-01-01", end = "2023-08-01")
+  
+  
+  if(sum(is.na(xts_1_zmienna_y_2015_2022[, nr_zmiennej_y])) == 71)
+  {
+    print("ZMIENNE TU SĄ TOŻSAMOŚCIOWO RÓWNE 0!!! TU NIE MA SENSU PROGNOZOWAĆ!!!")
+    
+    wyniki_RMSE_wszystko_SARIMA_2022[nr_zmiennej_y] <- 0
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2022[nr_zmiennej_y])
+    
+    next;
+  }
+  
+  wyniki_RMSE_wszystko_SARIMA_2022[nr_zmiennej_y] <- 1e+09
+  
+  try({
+    
+    # Kod dla przypadku bez opoznionej duzej kategorii (zobacz rozmowe z samym soba, z dnia 12.07.2023)
+    
+    dopasowana_auto_arima <- auto.arima(ts(sc_xts_objasniana, frequency = 12), xreg = ts(xts_1_zmienna_y_2015_2022[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    pred_1 <- forecast(dopasowana_auto_arima, h = 20, xreg = ts(xts_1_zmienna_y_2022_2023[, zbiory_zmiennych[[nr_zmiennej_y]]], frequency = 12))
+    
+    unsc_pred_1 <- as.double(pred_1$mean)
+    
+    listy_prognoz_wszystko_SARIMA_2022[[nr_zmiennej_y]] <- unsc_pred_1
+    
+    dane_pred <- data.frame(Dane = as.double(xts_caly_zbior_2015_kwiecien_2023_z_opoznieniem[84:103, nr_zmiennej_y]), Predykcje = unsc_pred_1)
+    
+    xts_dane_pred <- xts(dane_pred, order.by = index(xts_1_zmienna_y_2022_2023))
+    
+    wyniki_RMSE_wszystko_SARIMA_2022[nr_zmiennej_y] <- RMSE(xts_dane_pred[-nrow(xts_dane_pred), 1], xts_dane_pred[-nrow(xts_dane_pred), 2])
+    
+    print(wyniki_RMSE_wszystko_SARIMA_2022[nr_zmiennej_y])
+  }, silent = T
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+library(ggplot2)
+library(xts)
+library(dplyr)
+library(caret)
+
+
+
+
+
+
+
+wyniki_RMSE_wszystko_SARIMA <- wyniki_RMSE_wszystko_SARIMA_2022
+listy_prognoz_wszystko_SARIMA <- listy_prognoz_wszystko_SARIMA_2022
+
+
+
+for(i in 1:17)
+{
+  print(wyniki_RMSE_wszystko_SARIMA[i])
+  
+  if(is.null(listy_prognoz_wszystko_SARIMA[[i]]))
+  {
+    print("Tutaj brak prognozy!!! Nie można zrobić wykresu!!!")
+    
+    next;
+  }
+  nazwa_zmiennej <- names(xts_dane)[i]
+  
+  nazwa_zmiennej <- gsub("\"", "_", nazwa_zmiennej)
+  
+  print(paste0(round((i / 17) * 100, 2), "%"))
+  
+  df1 <- data.frame(zm_x = index(xts_dane_pred)[-length(index(xts_dane_pred))], 
+                    zm_y = as.double(xts_dane[85:103, i]))
+  
+  df2 <- data.frame(zm_x = index(xts_dane_pred), 
+                    zm_y = listy_prognoz_wszystko_SARIMA[[i]])
+  
+  df3 <- df1 %>% mutate(Type = "Wartość") %>% 
+    bind_rows(df2 %>% mutate(Type = "Prognoza"))
+  
+  
+  nazwa_1_czesc <- "Wykresy (od 2022)/SARIMA - Wartości i prognozy dla "
+  
+  
+  ggsave(
+    paste0(nazwa_1_czesc, nazwa_zmiennej, ".jpg"),
+    plot = ggplot(df3, aes(x = zm_x, y = zm_y, color = Type)) + 
+      geom_line() +
+      labs(title=paste0("Wartości i prognozy dla ", nazwa_zmiennej, " (SARIMA), RMSE = ", wyniki_RMSE_wszystko_SARIMA[i]), subtitle = "@mbank_research") + xlab("Data") + ylab(" ") +
+      theme_bw() +
+      theme(
+        axis.line = element_line(color='black'),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank()
+      )
+  )
+}
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+excel_prognozy_realizacja <- data.frame(matrix(NA, nrow = length(index(xts_1_zmienna_y_2022_2023)), ncol = 2 * 15 + 1))
+
+nazwy_prognozy <- paste0("Prognoza ", names(xts_dane)[setdiff(1:17, 10:11)])
+nazwy_realizacje <- paste0("Realizacja ", names(xts_dane)[setdiff(1:17, 10:11)])
+
+names(excel_prognozy_realizacja)[1] <- "Data"
+
+names(excel_prognozy_realizacja)[seq(2, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_prognozy
+names(excel_prognozy_realizacja)[seq(3, ncol(excel_prognozy_realizacja), by = 2)] <- nazwy_realizacje
+
+excel_prognozy_realizacja[, 1] <- index(xts_1_zmienna_y_2022_2023)
+
+k <- 1
+
+j_kolumna <- 2
+
+for(j in seq(2, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2022[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  print(paste0("J WYNOSI ", j))
+  print(j_kolumna)
+  excel_prognozy_realizacja[, j_kolumna] <- listy_prognoz_wszystko_SARIMA_2022[[k]]
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+k <- 1
+
+xts_dane_2021_2023 <- window(xts_dane, start = "2022-01-01", end = "2023-07-01")
+
+j_kolumna <- 3
+
+for(j in seq(3, ncol(excel_prognozy_realizacja) + 4, by = 2))
+{
+  if(is.null(listy_prognoz_wszystko_SARIMA_2022[[k]]))
+  {
+    print("BRAK PROGNOZY!!!")
+    
+    k <- k + 1
+    
+    next;
+  }
+  excel_prognozy_realizacja[-nrow(excel_prognozy_realizacja), j_kolumna] <- as.double(xts_dane_2021_2023[, k])
+  
+  j_kolumna <- j_kolumna + 2
+  
+  k <- k + 1
+}
+
+
+excel_prognozy_realizacja_2022 <- excel_prognozy_realizacja
+
+
+write.xlsx(list("Do 2019" = excel_prognozy_realizacja_2019, "Do 2020" = excel_prognozy_realizacja_2020, "Do 2021" = excel_prognozy_realizacja_2021,
+                "Do 2022" = excel_prognozy_realizacja_2022), "Prognozy_vs_realizacje_SARIMA.xlsx")
+
+
+
+
+
+
+
+
+
+
+
+library(openxlsx)
+library(xts)
+
+
+
+
+
+
+
+excel_zmienne_objasniajace_i_RMSE <- data.frame(matrix(NA, nrow = 15, ncol = 7))
+
+names(excel_zmienne_objasniajace_i_RMSE) <- c("Zmienna prognozowana", "RMSE", paste0("Zmienna nr ", 1:5))
+
+excel_zmienne_objasniajace_i_RMSE[, 1] <- nazwy_duzych_kategorii[setdiff(1:17, 10:11)]
+
+excel_zmienne_objasniajace_i_RMSE[, 2] <- wyniki_RMSE_wszystko_SARIMA_2022[setdiff(1:17, 10:11)]
+
+i_zbior_zmiennych <- 1
+
+i_wiersz <- 1
+
+for(i in 1:17)
+{
+  if(i %in% 10:11)
+  {
+    i_zbior_zmiennych <- i_zbior_zmiennych + 1
+    
+    next;
+  }
+  
+  excel_zmienne_objasniajace_i_RMSE[i_wiersz, 3:(length(zbiory_zmiennych[[i_zbior_zmiennych]]) + 2)] <- names(xts_dane)[zbiory_zmiennych[[i_zbior_zmiennych]]]
+  
+  i_zbior_zmiennych <- i_zbior_zmiennych + 1
+  
+  i_wiersz <- i_wiersz + 1
+}
+
+
+write.xlsx(excel_zmienne_objasniajace_i_RMSE, "Zmienne_objasniajace_i_RMSE_SARIMA_2022.xlsx")
